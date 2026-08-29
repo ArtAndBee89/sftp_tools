@@ -2,117 +2,28 @@ package main
 
 import (
 	"fmt"
-	"image/color"
-	"io"
-	"os"
 	"path/filepath"
+
+	"sftp-gui/internal/client"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
-	"github.com/pkg/sftp"
-	"golang.org/x/crypto/ssh"
 )
 
 var (
 	appInstance   fyne.App
-	sshClient     *ssh.Client
-	sftpClient    *sftp.Client
+	cli           *client.Client
 	currentDir    string
-	currentItems  []fileItem
+	currentItems  []client.Item
 	fileList      *widget.List
 	statusLabel   *widget.Label
 	pathLabel     *widget.Label
 	mainWindow    fyne.Window
 	selectedIndex int = -1
 )
-
-type fileItem struct {
-	Name    string
-	IsDir   bool
-	Size    int64
-	ModTime string
-}
-
-// ---------- Кастомный виджет с поддержкой левого и правого клика ----------
-type ClickableLabel struct {
-	widget.BaseWidget
-	Label             *widget.Label
-	OnTapped          func()
-	OnDoubleTapped    func()
-	OnTappedSecondary func(fyne.Position)
-	Selected          bool
-}
-
-func (c *ClickableLabel) SetSelected(selected bool) {
-	c.Selected = selected
-	c.Refresh()
-}
-
-func (c *ClickableLabel) Tapped(*fyne.PointEvent) {
-	if c.OnTapped != nil {
-		c.OnTapped()
-	}
-}
-
-func (c *ClickableLabel) DoubleTapped(*fyne.PointEvent) {
-	if c.OnDoubleTapped != nil {
-		c.OnDoubleTapped()
-	}
-}
-
-func (c *ClickableLabel) TappedSecondary(ev *fyne.PointEvent) {
-	if c.OnTappedSecondary != nil {
-		c.OnTappedSecondary(ev.AbsolutePosition)
-	}
-}
-
-func (c *ClickableLabel) CreateRenderer() fyne.WidgetRenderer {
-	bg := canvas.NewRectangle(color.Transparent)
-	return &selectableLabelRenderer{c: c, bg: bg, label: c.Label}
-}
-
-type selectableLabelRenderer struct {
-	c     *ClickableLabel
-	bg    *canvas.Rectangle
-	label *widget.Label
-}
-
-func (r *selectableLabelRenderer) Objects() []fyne.CanvasObject {
-	return []fyne.CanvasObject{r.bg, r.label}
-}
-
-func (r *selectableLabelRenderer) Layout(s fyne.Size) {
-	r.bg.Resize(s)
-	r.label.Resize(s)
-}
-
-func (r *selectableLabelRenderer) MinSize() fyne.Size {
-	return r.label.MinSize()
-}
-
-func (r *selectableLabelRenderer) Refresh() {
-	if r.c.Selected {
-		r.bg.FillColor = color.NRGBA{R: 51, G: 153, B: 255, A: 180}
-	} else {
-		r.bg.FillColor = color.Transparent
-	}
-	r.bg.Refresh()
-	r.label.Refresh()
-}
-
-func (r *selectableLabelRenderer) Destroy() {}
-
-func NewClickableLabel(text string, onTap func(), onDoubleTap func(), onTapSecondary func(fyne.Position)) *ClickableLabel {
-	label := widget.NewLabel(text)
-	label.Alignment = fyne.TextAlignLeading
-	c := &ClickableLabel{Label: label, OnTapped: onTap, OnDoubleTapped: onDoubleTap, OnTappedSecondary: onTapSecondary}
-	c.ExtendBaseWidget(c)
-	return c
-}
 
 // ---------- Основная программа ----------
 func main() {
@@ -136,7 +47,6 @@ func createConnectForm() *widget.Form {
 	userEntry.SetText("user")
 	passEntry := widget.NewPasswordEntry()
 	keyPathEntry := widget.NewEntry()
-	keyPathEntry.SetText("")
 
 	keyFileBtn := widget.NewButton("Выбрать ключ", func() {
 		dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
@@ -149,24 +59,28 @@ func createConnectForm() *widget.Form {
 
 	connectBtn := widget.NewButton("Подключиться", func() {
 		go func() {
-			// Обновление статуса — в главном потоке
 			fyne.Do(func() {
 				statusLabel.SetText("Подключение...")
 			})
-			err := connectSSHAndSFTP(
+			c, err := client.New(
 				hostEntry.Text,
 				userEntry.Text,
 				passEntry.Text,
 				keyPathEntry.Text,
 			)
 			if err != nil {
-				// Показываем диалог и статус в главном потоке
 				fyne.Do(func() {
 					dialog.ShowError(fmt.Errorf("Ошибка: %v", err), mainWindow)
 					statusLabel.SetText("Ошибка подключения")
 				})
 				return
 			}
+			cli = c
+			wd, err := cli.Getwd()
+			if err != nil {
+				wd = "/"
+			}
+			currentDir = wd
 			fyne.Do(func() {
 				statusLabel.SetText("Подключено")
 				showFileManager()
@@ -186,49 +100,7 @@ func createConnectForm() *widget.Form {
 	}
 }
 
-func connectSSHAndSFTP(host, user, password, keyPath string) error {
-	var authMethods []ssh.AuthMethod
-	if keyPath != "" {
-		data, err := os.ReadFile(keyPath)
-		if err != nil {
-			return fmt.Errorf("чтение ключа: %v", err)
-		}
-		signer, err := ssh.ParsePrivateKey(data)
-		if err != nil {
-			return fmt.Errorf("парсинг ключа: %v", err)
-		}
-		authMethods = append(authMethods, ssh.PublicKeys(signer))
-	}
-	if password != "" {
-		authMethods = append(authMethods, ssh.Password(password))
-	}
-	if len(authMethods) == 0 {
-		return fmt.Errorf("нужен пароль или ключ")
-	}
-
-	config := &ssh.ClientConfig{
-		User:            user,
-		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	}
-	client, err := ssh.Dial("tcp", host, config)
-	if err != nil {
-		return err
-	}
-	sshClient = client
-	sftpClient, err = sftp.NewClient(client)
-	if err != nil {
-		client.Close()
-		return err
-	}
-	wd, err := sftpClient.Getwd()
-	if err != nil {
-		wd = "/"
-	}
-	currentDir = wd
-	return nil
-}
-
+// ---------- Файловый менеджер ----------
 func showFileManager() {
 	pathLabel = widget.NewLabel("Текущая: " + currentDir)
 	upBtn := widget.NewButton("⬆ Вверх", func() {
@@ -242,7 +114,6 @@ func showFileManager() {
 	})
 	topBar := container.NewHBox(upBtn, refreshBtn, pathLabel)
 
-	// Список с ClickableLabel
 	fileList = widget.NewList(
 		func() int { return len(currentItems) },
 		func() fyne.CanvasObject {
@@ -295,7 +166,7 @@ func showFileManager() {
 			return
 		}
 		fullPath := filepath.Join(currentDir, item.Name)
-		downloadFile(fullPath, item)
+		downloadFile(fullPath)
 	})
 
 	mainContent := container.NewBorder(
@@ -333,10 +204,16 @@ func showContextMenu(id int, pos fyne.Position) {
 				dialog.ShowInformation("Папка", "Скачивание папок не поддерживается", mainWindow)
 				return
 			}
-			downloadFile(fullPath, item)
+			downloadFile(fullPath)
 		}),
 		fyne.NewMenuItem("ℹ️ Свойства", func() {
-			showFileProperties(fullPath, item)
+			info := fmt.Sprintf(
+				"Имя: %s\nПуть: %s\nТип: %s\nРазмер: %d байт\nИзменён: %s",
+				item.Name, fullPath,
+				map[bool]string{true: "Папка", false: "Файл"}[item.IsDir],
+				item.Size, item.ModTime,
+			)
+			dialog.ShowInformation("Свойства файла", info, mainWindow)
 		}),
 	}
 	menu := fyne.NewMenu("", items...)
@@ -345,25 +222,16 @@ func showContextMenu(id int, pos fyne.Position) {
 }
 
 // ---------- Скачивание ----------
-func downloadFile(remotePath string, item fileItem) {
+func downloadFile(remotePath string) {
 	dialog.ShowFileSave(func(writer fyne.URIWriteCloser, err error) {
 		if err != nil || writer == nil {
 			return
 		}
 		defer writer.Close()
-		// Выполняем сетевые операции в горутине, чтобы не блокировать UI
 		go func() {
-			remote, err := sftpClient.Open(remotePath)
-			if err != nil {
+			if err := cli.Download(remotePath, writer); err != nil {
 				fyne.Do(func() {
-					dialog.ShowError(fmt.Errorf("открытие файла: %v", err), mainWindow)
-				})
-				return
-			}
-			defer remote.Close()
-			if _, err := io.Copy(writer, remote); err != nil {
-				fyne.Do(func() {
-					dialog.ShowError(fmt.Errorf("копирование: %v", err), mainWindow)
+					dialog.ShowError(err, mainWindow)
 				})
 				return
 			}
@@ -374,31 +242,11 @@ func downloadFile(remotePath string, item fileItem) {
 	}, mainWindow)
 }
 
-// ---------- Свойства ----------
-func showFileProperties(remotePath string, item fileItem) {
-	info := fmt.Sprintf(
-		"Имя: %s\nПуть: %s\nТип: %s\nРазмер: %d байт\nИзменён: %s",
-		item.Name,
-		remotePath,
-		map[bool]string{true: "Папка", false: "Файл"}[item.IsDir],
-		item.Size,
-		item.ModTime,
-	)
-	dialog.ShowInformation("Свойства файла", info, mainWindow)
-}
-
 // ---------- Редактор ----------
 func openFileEditor(remotePath string) {
-	remoteFile, err := sftpClient.Open(remotePath)
+	data, err := cli.ReadFile(remotePath)
 	if err != nil {
-		dialog.ShowError(fmt.Errorf("не удалось открыть файл: %v", err), mainWindow)
-		return
-	}
-	defer remoteFile.Close()
-
-	data, err := io.ReadAll(remoteFile)
-	if err != nil {
-		dialog.ShowError(fmt.Errorf("не удалось прочитать файл: %v", err), mainWindow)
+		dialog.ShowError(err, mainWindow)
 		return
 	}
 
@@ -409,21 +257,10 @@ func openFileEditor(remotePath string) {
 	editor.SetText(string(data))
 
 	saveBtn := widget.NewButton("💾 Сохранить", func() {
-		// Выполняем запись в горутине
 		go func() {
-			remoteFileWrite, err := sftpClient.Create(remotePath)
-			if err != nil {
+			if err := cli.WriteFile(remotePath, []byte(editor.Text)); err != nil {
 				fyne.Do(func() {
-					dialog.ShowError(fmt.Errorf("не удалось создать файл для записи: %v", err), mainWindow)
-				})
-				return
-			}
-			defer remoteFileWrite.Close()
-
-			_, err = remoteFileWrite.Write([]byte(editor.Text))
-			if err != nil {
-				fyne.Do(func() {
-					dialog.ShowError(fmt.Errorf("ошибка записи: %v", err), mainWindow)
+					dialog.ShowError(err, mainWindow)
 				})
 				return
 			}
@@ -445,20 +282,12 @@ func openFileEditor(remotePath string) {
 
 // ---------- Навигация ----------
 func loadDir(path string) {
-	files, err := sftpClient.ReadDir(path)
+	items, err := cli.ListDir(path)
 	if err != nil {
 		dialog.ShowError(fmt.Errorf("чтение директории: %v", err), mainWindow)
 		return
 	}
-	currentItems = make([]fileItem, 0, len(files))
-	for _, f := range files {
-		currentItems = append(currentItems, fileItem{
-			Name:    f.Name(),
-			IsDir:   f.IsDir(),
-			Size:    f.Size(),
-			ModTime: f.ModTime().Format("2006-01-02 15:04:05"),
-		})
-	}
+	currentItems = items
 	currentDir = path
 	if pathLabel != nil {
 		pathLabel.SetText("Текущая: " + path)
