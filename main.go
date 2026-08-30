@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"image/color"
 	"os"
 	"path/filepath"
 
@@ -11,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -24,6 +26,7 @@ var (
 	pathLabel     *widget.Label
 	mainWindow    fyne.Window
 	selectedIds   = make(map[int]bool)
+	darkTheme     bool
 )
 
 // ---------- Основная программа ----------
@@ -35,10 +38,30 @@ func main() {
 
 	statusLabel = widget.NewLabel("Готов к подключению")
 	connectForm := createConnectForm()
-	content := container.NewBorder(connectForm, statusLabel, nil, nil,
-		container.NewCenter(widget.NewLabel("Введите параметры и нажмите Подключиться")))
+	themeBtn := newThemeToggle()
+	topBar := container.NewHBox(themeBtn, widget.NewLabel("Настройки:"))
+	content := container.NewBorder(
+		container.NewBorder(nil, nil, topBar, nil, connectForm),
+		statusLabel, nil, nil,
+		container.NewCenter(widget.NewLabel("Введите параметры и нажмите Подключиться")),
+	)
 	w.SetContent(content)
 	w.ShowAndRun()
+}
+
+func newThemeToggle() *widget.Button {
+	btn := widget.NewButton("☀️", func() {})
+	btn.OnTapped = func() {
+		darkTheme = !darkTheme
+		if darkTheme {
+			appInstance.Settings().SetTheme(theme.DarkTheme())
+			btn.SetText("🌙")
+		} else {
+			appInstance.Settings().SetTheme(theme.LightTheme())
+			btn.SetText("☀️")
+		}
+	}
+	return btn
 }
 
 func createConnectForm() *widget.Form {
@@ -113,21 +136,24 @@ func showFileManager() {
 	refreshBtn := widget.NewButton("⟳ Обновить", func() {
 		loadDir(currentDir)
 	})
-	topBar := container.NewHBox(upBtn, refreshBtn, pathLabel)
+	topBar := container.NewHBox(upBtn, refreshBtn, newThemeToggle(), pathLabel)
 
 	fileList = widget.NewList(
 		func() int { return len(currentItems) },
 		func() fyne.CanvasObject {
-			return NewClickableLabel("", nil, nil, nil)
+			return NewClickableLabel(nil, nil, nil)
 		},
 		func(id int, obj fyne.CanvasObject) {
 			clickable := obj.(*ClickableLabel)
 			item := currentItems[id]
-			icon := "📄 "
+			icon := "📄"
+			var iconColor color.Color = color.Black
 			if item.IsDir {
-				icon = "📁 "
+				icon = "📁"
+				iconColor = color.RGBA{R: 0, G: 102, B: 204, A: 255}
 			}
-			text := fmt.Sprintf("%s%s  (размер: %d)  %s", icon, item.Name, item.Size, item.ModTime)
+			clickable.SetIcon(icon, iconColor)
+			text := fmt.Sprintf("  %s  (размер: %d)  %s", item.Name, item.Size, item.ModTime)
 			clickable.Label.SetText(text)
 			clickable.SetSelected(selectedIds[id])
 
