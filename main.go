@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"image/color"
 	"os"
 	"path/filepath"
 
@@ -146,13 +145,7 @@ func showFileManager() {
 		func(id int, obj fyne.CanvasObject) {
 			clickable := obj.(*ClickableLabel)
 			item := currentItems[id]
-			icon := "📄"
-			var iconColor color.Color = color.Black
-			if item.IsDir {
-				icon = "📁"
-				iconColor = color.RGBA{R: 0, G: 102, B: 204, A: 255}
-			}
-			clickable.SetIcon(icon, iconColor)
+			clickable.SetIcon(item.IsDir)
 			text := fmt.Sprintf("  %s  (размер: %d)  %s", item.Name, item.Size, item.ModTime)
 			clickable.Label.SetText(text)
 			clickable.SetSelected(selectedIds[id])

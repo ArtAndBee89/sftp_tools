@@ -5,6 +5,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -12,7 +13,7 @@ import (
 type ClickableLabel struct {
 	widget.BaseWidget
 	Label             *widget.Label
-	Icon              *canvas.Text
+	Icon              *canvas.Image
 	OnTapped          func()
 	OnDoubleTapped    func()
 	OnTappedSecondary func(fyne.Position)
@@ -24,9 +25,12 @@ func (c *ClickableLabel) SetSelected(selected bool) {
 	c.Refresh()
 }
 
-func (c *ClickableLabel) SetIcon(icon string, iconColor color.Color) {
-	c.Icon.Text = icon
-	c.Icon.Color = iconColor
+func (c *ClickableLabel) SetIcon(isDir bool) {
+	if isDir {
+		c.Icon.Resource = theme.NewPrimaryThemedResource(theme.FolderIcon())
+	} else {
+		c.Icon.Resource = theme.FileIcon()
+	}
 	c.Icon.Refresh()
 }
 
@@ -56,7 +60,7 @@ func (c *ClickableLabel) CreateRenderer() fyne.WidgetRenderer {
 type selectableLabelRenderer struct {
 	c     *ClickableLabel
 	bg    *canvas.Rectangle
-	icon  *canvas.Text
+	icon  *canvas.Image
 	label *widget.Label
 }
 
@@ -69,13 +73,13 @@ func (r *selectableLabelRenderer) Layout(s fyne.Size) {
 	iconSize := fyne.NewSize(24, s.Height)
 	labelSize := fyne.NewSize(s.Width-iconSize.Width, s.Height)
 	r.icon.Resize(iconSize)
-	r.icon.Move(fyne.NewPos(2, 0))
+	r.icon.Move(fyne.NewPos(4, 0))
 	r.label.Resize(labelSize)
-	r.label.Move(fyne.NewPos(iconSize.Width+2, 0))
+	r.label.Move(fyne.NewPos(28, 0))
 }
 
 func (r *selectableLabelRenderer) MinSize() fyne.Size {
-	return fyne.NewSize(r.icon.MinSize().Width+r.label.MinSize().Width, r.label.MinSize().Height)
+	return fyne.NewSize(28+r.label.MinSize().Width, r.label.MinSize().Height)
 }
 
 func (r *selectableLabelRenderer) Refresh() {
@@ -94,8 +98,8 @@ func (r *selectableLabelRenderer) Destroy() {}
 func NewClickableLabel(onTap func(), onDoubleTap func(), onTapSecondary func(fyne.Position)) *ClickableLabel {
 	label := widget.NewLabel("")
 	label.Alignment = fyne.TextAlignLeading
-	icon := canvas.NewText("", color.Black)
-	icon.Alignment = fyne.TextAlignLeading
+	icon := canvas.NewImageFromResource(theme.FileIcon())
+	icon.FillMode = canvas.ImageFillContain
 	c := &ClickableLabel{
 		Label:             label,
 		Icon:              icon,
