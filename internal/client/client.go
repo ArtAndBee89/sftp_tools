@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strings"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -101,6 +103,12 @@ func (c *Client) ListDir(path string) ([]Item, error) {
 			ModTime: f.ModTime().Format("2006-01-02 15:04:05"),
 		})
 	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].IsDir != items[j].IsDir {
+			return items[i].IsDir // папки первыми
+		}
+		return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+	})
 	return items, nil
 }
 

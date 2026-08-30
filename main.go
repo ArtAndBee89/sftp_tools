@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"sftp-gui/internal/client"
@@ -22,7 +23,7 @@ var (
 	statusLabel   *widget.Label
 	pathLabel     *widget.Label
 	mainWindow    fyne.Window
-	selectedIndex int = -1
+	selectedIds   = make(map[int]bool)
 )
 
 // ---------- Основная программа ----------
@@ -128,18 +129,18 @@ func showFileManager() {
 			}
 			text := fmt.Sprintf("%s%s  (размер: %d)  %s", icon, item.Name, item.Size, item.ModTime)
 			clickable.Label.SetText(text)
-			clickable.SetSelected(id == selectedIndex)
+			clickable.SetSelected(selectedIds[id])
 
 			clickable.OnTapped = func() {
-				if id == selectedIndex {
-					selectedIndex = -1
+				if selectedIds[id] {
+					delete(selectedIds, id)
 				} else {
-					selectedIndex = id
+					selectedIds[id] = true
 				}
 				fileList.Refresh()
 			}
 			clickable.OnDoubleTapped = func() {
-				selectedIndex = id
+				// при двойном клике открываем этот элемент независимо от множественного выбора
 				fullPath := filepath.Join(currentDir, item.Name)
 				if item.IsDir {
 					changeDir(fullPath)
@@ -148,25 +149,33 @@ func showFileManager() {
 				}
 			}
 			clickable.OnTappedSecondary = func(pos fyne.Position) {
-				selectedIndex = id
+				selectedIds[id] = true
 				showContextMenu(id, pos)
 			}
 		},
 	)
 
-	downloadBtn := widget.NewButton("⬇ Скачать выбранный", func() {
-		id := selectedIndex
-		if id < 0 || id >= len(currentItems) {
-			dialog.ShowInformation("Нет выбора", "Выберите файл", mainWindow)
+	downloadBtn := widget.NewButton("⬇ Скачать выбранные", func() {
+		if len(selectedIds) == 0 {
+			dialog.ShowInformation("Нет выбора", "Выберите файлы", mainWindow)
 			return
 		}
-		item := currentItems[id]
-		if item.IsDir {
-			dialog.ShowInformation("Папка", "Скачивание папок не поддерживается", mainWindow)
+		path := currentDir
+		var chosen []client.Item
+		for i, it := range currentItems {
+			if selectedIds[i] {
+				if it.IsDir {
+					dialog.ShowInformation("Папка", "Скачивание папок не поддерживается", mainWindow)
+					return
+				}
+				chosen = append(chosen, it)
+			}
+		}
+		if len(chosen) == 1 {
+			downloadFile(filepath.Join(path, chosen[0].Name))
 			return
 		}
-		fullPath := filepath.Join(currentDir, item.Name)
-		downloadFile(fullPath)
+		downloadMultiple(path, chosen)
 	})
 
 	mainContent := container.NewBorder(
@@ -242,6 +251,35 @@ func downloadFile(remotePath string) {
 	}, mainWindow)
 }
 
+func downloadMultiple(basePath string, items []client.Item) {
+	dialog.ShowFolderOpen(func(list fyne.ListableURI, err error) {
+		if err != nil || list == nil {
+			return
+		}
+		localDir := list.Path()
+		go func() {
+			for _, it := range items {
+				data, err := cli.ReadFile(filepath.Join(basePath, it.Name))
+				if err != nil {
+					fyne.Do(func() {
+						dialog.ShowError(fmt.Errorf("%s: %v", it.Name, err), mainWindow)
+					})
+					return
+				}
+				if err := os.WriteFile(filepath.Join(localDir, it.Name), data, 0644); err != nil {
+					fyne.Do(func() {
+						dialog.ShowError(fmt.Errorf("%s: %v", it.Name, err), mainWindow)
+					})
+					return
+				}
+			}
+			fyne.Do(func() {
+				dialog.ShowInformation("Успех", fmt.Sprintf("Скачано %d файлов", len(items)), mainWindow)
+			})
+		}()
+	}, mainWindow)
+}
+
 // ---------- Редактор ----------
 func openFileEditor(remotePath string) {
 	data, err := cli.ReadFile(remotePath)
@@ -295,7 +333,7 @@ func loadDir(path string) {
 	if fileList != nil {
 		fileList.Refresh()
 	}
-	selectedIndex = -1
+	selectedIds = make(map[int]bool)
 }
 
 func changeDir(path string) {
