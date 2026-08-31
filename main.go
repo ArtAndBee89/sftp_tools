@@ -23,12 +23,12 @@ var (
 	currentItems  []client.Item
 	fileList      *widget.List
 	statusLabel   *widget.Label
-	pathLabel     *widget.Label
 	mainWindow    fyne.Window
 	selectedIds   = make(map[int]bool)
 	darkTheme     bool
 	savedProfiles []profiles.Profile
 	profilesList  *widget.List
+	pathEntry     *widget.Entry
 )
 
 // ---------- Основная программа ----------
@@ -81,15 +81,23 @@ func newThemeToggle() *widget.Button {
 	return btn
 }
 
-// ---------- Профили подключения ----------
+// ---------- Соединения подключения ----------
 func newProfilesSection() fyne.CanvasObject {
-	label := widget.NewLabel("Сохранённые профили")
+	label := widget.NewLabel("Сохранённые соединения")
 	names := make([]string, 0, len(savedProfiles))
 	for _, p := range savedProfiles {
 		names = append(names, p.Name)
 	}
 	selectedProfile := -1
 
+	connectToBtn := widget.NewButton("🔌 Подключиться к соединению", func() {
+		if selectedProfile < 0 || selectedProfile >= len(savedProfiles) {
+			return
+		}
+		p := savedProfiles[selectedProfile]
+		connectWithCredentials(p.Host, p.User, p.Password, p.KeyPath)
+	})
+	connectToBtn.Importance = widget.HighImportance
 	editBtn := widget.NewButton("✏️ Редактировать", func() {
 		if selectedProfile < 0 || selectedProfile >= len(savedProfiles) {
 			return
@@ -101,7 +109,7 @@ func newProfilesSection() fyne.CanvasObject {
 			return
 		}
 		name := savedProfiles[selectedProfile].Name
-		dialog.ShowConfirm("Удалить профиль", fmt.Sprintf("Удалить профиль «%s»?", name),
+		dialog.ShowConfirm("Удалить соединение", fmt.Sprintf("Удалить соединение «%s»?", name),
 			func(ok bool) {
 				if !ok {
 					return
@@ -142,7 +150,7 @@ func newProfilesSection() fyne.CanvasObject {
 		},
 	)
 
-	btnBar := container.NewHBox(editBtn, deleteBtn)
+	btnBar := container.NewHBox(connectToBtn, editBtn, deleteBtn)
 	return container.NewBorder(
 		container.NewVBox(label, btnBar),
 		nil, nil, nil,
@@ -176,7 +184,7 @@ func connectWithCredentials(host, user, password, keyPath string) {
 	}()
 }
 
-// ---------- Окно редактирования профиля ----------
+// ---------- Окно редактирования соединения ----------
 func editProfileWindow(p profiles.Profile) {
 	w := appInstance.NewWindow("Редактирование: " + p.Name)
 	w.Resize(fyne.NewSize(400, 300))
@@ -213,7 +221,7 @@ func editProfileWindow(p profiles.Profile) {
 		}
 		savedProfiles, _ = profiles.Load()
 		refreshProfilesList()
-		dialog.ShowInformation("Сохранено", "Профиль обновлён", w)
+		dialog.ShowInformation("Сохранено", "Соединение обновлено", w)
 		w.Close()
 	})
 
@@ -257,10 +265,10 @@ func createConnectForm() fyne.CanvasObject {
 	})
 	connectBtn.Importance = widget.HighImportance
 
-	saveProfileBtn := widget.NewButton("💾 Сохранить профиль", func() {
+	saveProfileBtn := widget.NewButton("💾 Сохранить соединение", func() {
 		name := profileNameEntry.Text
 		if name == "" {
-			dialog.ShowInformation("Нет имени", "Укажите имя профиля", mainWindow)
+			dialog.ShowInformation("Нет имени", "Укажите имя соединения", mainWindow)
 			return
 		}
 		p := profiles.Profile{
@@ -271,12 +279,12 @@ func createConnectForm() fyne.CanvasObject {
 			KeyPath:  keyPathEntry.Text,
 		}
 		if _, err := profiles.Add(p); err != nil {
-			dialog.ShowError(fmt.Errorf("сохранение профиля: %v", err), mainWindow)
+			dialog.ShowError(fmt.Errorf("сохранение соединения: %v", err), mainWindow)
 			return
 		}
 		savedProfiles, _ = profiles.Load()
 		refreshProfilesList()
-		dialog.ShowInformation("Профиль сохранён", "Профиль «"+name+"» добавлен", mainWindow)
+		dialog.ShowInformation("Соединение сохранено", "Соединение «"+name+"» добавлено", mainWindow)
 	})
 
 	saveProfileBtn.Importance = widget.MediumImportance
@@ -287,7 +295,7 @@ func createConnectForm() fyne.CanvasObject {
 			widget.NewFormItem("Пользователь", userEntry),
 			widget.NewFormItem("Пароль", passEntry),
 			widget.NewFormItem("Ключ (опционально)", container.NewBorder(nil, nil, nil, keyFileBtn, keyPathEntry)),
-			widget.NewFormItem("Имя профиля", profileNameEntry),
+			widget.NewFormItem("Имя соединения", profileNameEntry),
 		},
 	}
 
@@ -324,7 +332,11 @@ func refreshProfilesList() {
 
 // ---------- Файловый менеджер ----------
 func showFileManager() {
-	pathLabel = widget.NewLabel("Текущая: " + currentDir)
+	pathEntry = widget.NewEntry()
+	pathEntry.SetText(currentDir)
+	pathEntry.OnSubmitted = func(path string) {
+		changeDir(path)
+	}
 	disconnectBtn := widget.NewButton("🔌 Отключиться", func() {
 		cli.Close()
 		cli = nil
@@ -341,7 +353,10 @@ func showFileManager() {
 	refreshBtn := widget.NewButton("⟳ Обновить", func() {
 		loadDir(currentDir)
 	})
-	topBar := container.NewHBox(upBtn, refreshBtn, newThemeToggle(), disconnectBtn, pathLabel)
+	topBar := container.NewVBox(
+		container.NewHBox(upBtn, refreshBtn, newThemeToggle(), disconnectBtn),
+		pathEntry,
+	)
 
 	fileList = widget.NewList(
 		func() int { return len(currentItems) },
@@ -578,8 +593,8 @@ func loadDir(path string) {
 	}
 	currentItems = items
 	currentDir = path
-	if pathLabel != nil {
-		pathLabel.SetText("Текущая: " + path)
+	if pathEntry != nil {
+		pathEntry.SetText(path)
 	}
 	if fileList != nil {
 		fileList.Refresh()
