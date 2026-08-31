@@ -255,6 +255,7 @@ func createConnectForm() fyne.CanvasObject {
 			keyPathEntry.Text,
 		)
 	})
+	connectBtn.Importance = widget.HighImportance
 
 	saveProfileBtn := widget.NewButton("💾 Сохранить профиль", func() {
 		name := profileNameEntry.Text
@@ -288,13 +289,16 @@ func createConnectForm() fyne.CanvasObject {
 			widget.NewFormItem("Ключ (опционально)", container.NewBorder(nil, nil, nil, keyFileBtn, keyPathEntry)),
 			widget.NewFormItem("Имя профиля", profileNameEntry),
 		},
-		OnSubmit:   connectBtn.OnTapped,
-		SubmitText: "Подключиться",
 	}
+
+	btnRow := container.NewHBox(
+		connectBtn,
+		saveProfileBtn,
+	)
 
 	return container.NewVBox(
 		form,
-		saveProfileBtn,
+		btnRow,
 	)
 }
 
