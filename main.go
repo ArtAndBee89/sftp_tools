@@ -122,7 +122,7 @@ func showFileManager() {
 		nil, nil,
 		mainContent,
 	))
-	mainWindow.Resize(fyne.NewSize(900, 700))
+	mainWindow.Resize(fyne.NewSize(1200, 800))
 	mainWindow.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
 		if e.Name == fyne.KeyDelete {
 			deleteSelectedItems()

@@ -365,20 +365,7 @@ func createConnectForm() fyne.CanvasObject {
 }
 
 func refreshProfilesList() {
-	if profilesList == nil {
-		return
-	}
-	names := make([]string, 0, len(savedProfiles))
-	for _, p := range savedProfiles {
-		names = append(names, p.Name)
-	}
-	profilesList.Length = func() int { return len(names) }
-	profilesList.UpdateItem = func(id int, obj fyne.CanvasObject) {
-		clickable := obj.(*ClickableLabel)
-		clickable.SetIcon(false)
-		clickable.Label.SetText("  " + names[id])
-	}
-	profilesList.Refresh()
+	returnToConnectScreen()
 }
 
 // ---------- Возврат на экран подключения ----------
@@ -398,5 +385,4 @@ func returnToConnectScreen() {
 		),
 	)
 	mainWindow.SetContent(content)
-	mainWindow.Resize(fyne.NewSize(800, 600))
 }
