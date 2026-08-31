@@ -23,12 +23,13 @@ var (
 	currentItems  []client.Item
 	fileList      *widget.List
 	statusLabel   *widget.Label
+	pathEntry     *widget.Entry
 	mainWindow    fyne.Window
 	selectedIds   = make(map[int]bool)
 	darkTheme     bool
 	savedProfiles []profiles.Profile
 	profilesList  *widget.List
-	pathEntry     *widget.Entry
+	ctrlHeld      bool
 )
 
 // ---------- Основная программа ----------
@@ -374,9 +375,14 @@ func showFileManager() {
 			clickable.SetSelected(selectedIds[id])
 
 			clickable.OnTapped = func() {
-				if selectedIds[id] {
-					delete(selectedIds, id)
+				if ctrlHeld {
+					if selectedIds[id] {
+						delete(selectedIds, id)
+					} else {
+						selectedIds[id] = true
+					}
 				} else {
+					selectedIds = make(map[int]bool)
 					selectedIds[id] = true
 				}
 				fileList.Refresh()

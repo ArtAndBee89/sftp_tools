@@ -5,6 +5,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -37,6 +38,18 @@ func (c *ClickableLabel) SetIcon(isDir bool) {
 func (c *ClickableLabel) Tapped(*fyne.PointEvent) {
 	if c.OnTapped != nil {
 		c.OnTapped()
+	}
+}
+
+func (c *ClickableLabel) MouseDown(ev *desktop.MouseEvent) {
+	if ev.Modifier&fyne.KeyModifierControl != 0 {
+		ctrlHeld = true
+	}
+}
+
+func (c *ClickableLabel) MouseUp(ev *desktop.MouseEvent) {
+	if ev.Modifier&fyne.KeyModifierControl == 0 {
+		ctrlHeld = false
 	}
 }
 
