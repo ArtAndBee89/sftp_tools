@@ -49,16 +49,25 @@ func main() {
 }
 
 func newThemeToggle() *widget.Button {
-	btn := widget.NewButton("☀️", func() {})
+	btn := widget.NewButton("", func() {})
+	updateBtn := func() {
+		if darkTheme {
+			btn.SetText("🌙")
+		} else {
+			btn.SetText("☀️")
+		}
+	}
+	// определяем текущую тему (системную), чтобы кнопка сразу показывала её
+	darkTheme = appInstance.Settings().ThemeVariant() == theme.VariantDark
+	updateBtn()
 	btn.OnTapped = func() {
 		darkTheme = !darkTheme
 		if darkTheme {
 			appInstance.Settings().SetTheme(theme.DarkTheme())
-			btn.SetText("🌙")
 		} else {
 			appInstance.Settings().SetTheme(theme.LightTheme())
-			btn.SetText("☀️")
 		}
+		updateBtn()
 	}
 	return btn
 }
@@ -249,17 +258,24 @@ func showContextMenu(id int, pos fyne.Position) {
 	popup.ShowAtPosition(pos)
 }
 
-// ---------- Скачивание ----------
+// ---------- Скачивание одного или нескольких файлов ----------
 func downloadFile(remotePath string) {
-	dialog.ShowFileSave(func(writer fyne.URIWriteCloser, err error) {
-		if err != nil || writer == nil {
+	dialog.ShowFolderOpen(func(list fyne.ListableURI, err error) {
+		if err != nil || list == nil {
 			return
 		}
-		defer writer.Close()
+		localPath := filepath.Join(list.Path(), filepath.Base(remotePath))
 		go func() {
-			if err := cli.Download(remotePath, writer); err != nil {
+			data, err := cli.ReadFile(remotePath)
+			if err != nil {
 				fyne.Do(func() {
 					dialog.ShowError(err, mainWindow)
+				})
+				return
+			}
+			if err := os.WriteFile(localPath, data, 0644); err != nil {
+				fyne.Do(func() {
+					dialog.ShowError(fmt.Errorf("запись файла: %v", err), mainWindow)
 				})
 				return
 			}
