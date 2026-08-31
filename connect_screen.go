@@ -1,7 +1,9 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
+	"strings"
 
 	"sftp-gui/internal/client"
 	"sftp-gui/internal/profiles"
@@ -13,6 +15,9 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
+
+//go:embed icon.png
+var iconData []byte
 
 var (
 	appInstance   fyne.App
@@ -34,8 +39,11 @@ var (
 func main() {
 	appInstance = app.New()
 	w := appInstance.NewWindow("SFTP/SSH клиент")
+	if len(iconData) > 0 {
+		w.SetIcon(fyne.NewStaticResource("icon", iconData))
+	}
 	mainWindow = w
-	w.Resize(fyne.NewSize(800, 600))
+	w.Resize(fyne.NewSize(1200, 800))
 
 	savedProfiles, _ = profiles.Load()
 	statusLabel = widget.NewLabel("Готов к подключению")
@@ -226,15 +234,15 @@ func editProfileWindow(p profiles.Profile) {
 
 	saveBtn := widget.NewButton("💾 Сохранить", func() {
 		updated := profiles.Profile{
-			Name:          p.Name,
-			Host:          hostEntry.Text,
-			User:          userEntry.Text,
+			Name:          strings.TrimSpace(p.Name),
+			Host:          strings.TrimSpace(hostEntry.Text),
+			User:          strings.TrimSpace(userEntry.Text),
 			Password:      passEntry.Text,
-			KeyPath:       keyPathEntry.Text,
-			ProxyHost:     proxyHostEntry.Text,
-			ProxyUser:     proxyUserEntry.Text,
+			KeyPath:       strings.TrimSpace(keyPathEntry.Text),
+			ProxyHost:     strings.TrimSpace(proxyHostEntry.Text),
+			ProxyUser:     strings.TrimSpace(proxyUserEntry.Text),
 			ProxyPassword: proxyPassEntry.Text,
-			ProxyKeyPath:  proxyKeyEntry.Text,
+			ProxyKeyPath:  strings.TrimSpace(proxyKeyEntry.Text),
 		}
 		if _, err := profiles.Add(updated); err != nil {
 			dialog.ShowError(fmt.Errorf("ошибка сохранения: %v", err), w)
@@ -309,15 +317,15 @@ func createConnectForm() fyne.CanvasObject {
 			return
 		}
 		p := profiles.Profile{
-			Name:          name,
-			Host:          hostEntry.Text,
-			User:          userEntry.Text,
+			Name:          strings.TrimSpace(name),
+			Host:          strings.TrimSpace(hostEntry.Text),
+			User:          strings.TrimSpace(userEntry.Text),
 			Password:      passEntry.Text,
-			KeyPath:       keyPathEntry.Text,
-			ProxyHost:     proxyHostEntry.Text,
-			ProxyUser:     proxyUserEntry.Text,
+			KeyPath:       strings.TrimSpace(keyPathEntry.Text),
+			ProxyHost:     strings.TrimSpace(proxyHostEntry.Text),
+			ProxyUser:     strings.TrimSpace(proxyUserEntry.Text),
 			ProxyPassword: proxyPassEntry.Text,
-			ProxyKeyPath:  proxyKeyEntry.Text,
+			ProxyKeyPath:  strings.TrimSpace(proxyKeyEntry.Text),
 		}
 		if _, err := profiles.Add(p); err != nil {
 			dialog.ShowError(fmt.Errorf("сохранение соединения: %v", err), mainWindow)
