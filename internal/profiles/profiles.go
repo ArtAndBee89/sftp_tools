@@ -8,11 +8,15 @@ import (
 )
 
 type Profile struct {
-	Name     string `json:"name"`
-	Host     string `json:"host"`
-	User     string `json:"user"`
-	Password string `json:"password,omitempty"`
-	KeyPath  string `json:"keyPath,omitempty"`
+	Name           string `json:"name"`
+	Host           string `json:"host"`
+	User           string `json:"user"`
+	Password       string `json:"password,omitempty"`
+	KeyPath        string `json:"keyPath,omitempty"`
+	ProxyHost      string `json:"proxyHost,omitempty"`
+	ProxyUser      string `json:"proxyUser,omitempty"`
+	ProxyPassword  string `json:"proxyPassword,omitempty"`
+	ProxyKeyPath   string `json:"proxyKeyPath,omitempty"`
 }
 
 func configPath() (string, error) {

@@ -93,7 +93,7 @@ func newProfilesSection() fyne.CanvasObject {
 			return
 		}
 		p := savedProfiles[selectedProfile]
-		connectWithCredentials(p.Host, p.User, p.Password, p.KeyPath)
+		connectWithCredentials(p.Host, p.User, p.Password, p.KeyPath, p.ProxyHost, p.ProxyUser, p.ProxyPassword, p.ProxyKeyPath)
 	})
 	connectToBtn.Importance = widget.HighImportance
 	editBtn := widget.NewButton("✏️ Редактировать", func() {
@@ -143,7 +143,7 @@ func newProfilesSection() fyne.CanvasObject {
 					return
 				}
 				p := savedProfiles[id]
-				connectWithCredentials(p.Host, p.User, p.Password, p.KeyPath)
+				connectWithCredentials(p.Host, p.User, p.Password, p.KeyPath, p.ProxyHost, p.ProxyUser, p.ProxyPassword, p.ProxyKeyPath)
 			}
 		},
 	)
@@ -156,12 +156,13 @@ func newProfilesSection() fyne.CanvasObject {
 	)
 }
 
-func connectWithCredentials(host, user, password, keyPath string) {
+func connectWithCredentials(host, user, password, keyPath, proxyHost, proxyUser, proxyPassword, proxyKeyPath string) {
 	go func() {
 		fyne.Do(func() {
 			statusLabel.SetText("Подключение...")
 		})
-		c, err := client.New(host, user, password, keyPath)
+		c := &client.Client{}
+		err := c.Connect(host, user, password, keyPath, proxyHost, proxyUser, proxyPassword, proxyKeyPath)
 		if err != nil {
 			fyne.Do(func() {
 				dialog.ShowError(fmt.Errorf("Ошибка: %v", err), mainWindow)
@@ -185,7 +186,7 @@ func connectWithCredentials(host, user, password, keyPath string) {
 // ---------- Окно редактирования соединения ----------
 func editProfileWindow(p profiles.Profile) {
 	w := appInstance.NewWindow("Редактирование: " + p.Name)
-	w.Resize(fyne.NewSize(400, 300))
+	w.Resize(fyne.NewSize(450, 400))
 
 	hostEntry := widget.NewEntry()
 	hostEntry.SetText(p.Host)
@@ -205,13 +206,35 @@ func editProfileWindow(p profiles.Profile) {
 		}, w)
 	})
 
+	proxyHostEntry := widget.NewEntry()
+	proxyHostEntry.SetText(p.ProxyHost)
+	proxyUserEntry := widget.NewEntry()
+	proxyUserEntry.SetText(p.ProxyUser)
+	proxyPassEntry := widget.NewPasswordEntry()
+	proxyPassEntry.SetText(p.ProxyPassword)
+	proxyKeyEntry := widget.NewEntry()
+	proxyKeyEntry.SetText(p.ProxyKeyPath)
+
+	proxyKeyBtn := widget.NewButton("Выбрать ключ", func() {
+		dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
+			if err == nil && reader != nil {
+				proxyKeyEntry.SetText(reader.URI().Path())
+				reader.Close()
+			}
+		}, w)
+	})
+
 	saveBtn := widget.NewButton("💾 Сохранить", func() {
 		updated := profiles.Profile{
-			Name:     p.Name,
-			Host:     hostEntry.Text,
-			User:     userEntry.Text,
-			Password: passEntry.Text,
-			KeyPath:  keyPathEntry.Text,
+			Name:          p.Name,
+			Host:          hostEntry.Text,
+			User:          userEntry.Text,
+			Password:      passEntry.Text,
+			KeyPath:       keyPathEntry.Text,
+			ProxyHost:     proxyHostEntry.Text,
+			ProxyUser:     proxyUserEntry.Text,
+			ProxyPassword: proxyPassEntry.Text,
+			ProxyKeyPath:  proxyKeyEntry.Text,
 		}
 		if _, err := profiles.Add(updated); err != nil {
 			dialog.ShowError(fmt.Errorf("ошибка сохранения: %v", err), w)
@@ -229,6 +252,11 @@ func editProfileWindow(p profiles.Profile) {
 			widget.NewFormItem("Пользователь", userEntry),
 			widget.NewFormItem("Пароль", passEntry),
 			widget.NewFormItem("Ключ", container.NewBorder(nil, nil, nil, keyFileBtn, keyPathEntry)),
+			widget.NewFormItem("", widget.NewLabel("SSH-прокси (опционально)")),
+			widget.NewFormItem("Хост:порт прокси", proxyHostEntry),
+			widget.NewFormItem("Пользователь прокси", proxyUserEntry),
+			widget.NewFormItem("Пароль прокси", proxyPassEntry),
+			widget.NewFormItem("Ключ прокси", container.NewBorder(nil, nil, nil, proxyKeyBtn, proxyKeyEntry)),
 		},
 	}
 	w.SetContent(container.NewVBox(form, saveBtn))
@@ -253,12 +281,23 @@ func createConnectForm() fyne.CanvasObject {
 		}, mainWindow)
 	})
 
+	proxyHostEntry := widget.NewEntry()
+	proxyUserEntry := widget.NewEntry()
+	proxyPassEntry := widget.NewPasswordEntry()
+	proxyKeyEntry := widget.NewEntry()
+	proxyKeyBtn := widget.NewButton("Выбрать ключ", func() {
+		dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
+			if err == nil && reader != nil {
+				proxyKeyEntry.SetText(reader.URI().Path())
+				reader.Close()
+			}
+		}, mainWindow)
+	})
+
 	connectBtn := widget.NewButton("Подключиться", func() {
 		connectWithCredentials(
-			hostEntry.Text,
-			userEntry.Text,
-			passEntry.Text,
-			keyPathEntry.Text,
+			hostEntry.Text, userEntry.Text, passEntry.Text, keyPathEntry.Text,
+			proxyHostEntry.Text, proxyUserEntry.Text, proxyPassEntry.Text, proxyKeyEntry.Text,
 		)
 	})
 	connectBtn.Importance = widget.HighImportance
@@ -270,11 +309,15 @@ func createConnectForm() fyne.CanvasObject {
 			return
 		}
 		p := profiles.Profile{
-			Name:     name,
-			Host:     hostEntry.Text,
-			User:     userEntry.Text,
-			Password: passEntry.Text,
-			KeyPath:  keyPathEntry.Text,
+			Name:          name,
+			Host:          hostEntry.Text,
+			User:          userEntry.Text,
+			Password:      passEntry.Text,
+			KeyPath:       keyPathEntry.Text,
+			ProxyHost:     proxyHostEntry.Text,
+			ProxyUser:     proxyUserEntry.Text,
+			ProxyPassword: proxyPassEntry.Text,
+			ProxyKeyPath:  proxyKeyEntry.Text,
 		}
 		if _, err := profiles.Add(p); err != nil {
 			dialog.ShowError(fmt.Errorf("сохранение соединения: %v", err), mainWindow)
@@ -293,6 +336,11 @@ func createConnectForm() fyne.CanvasObject {
 			widget.NewFormItem("Пользователь", userEntry),
 			widget.NewFormItem("Пароль", passEntry),
 			widget.NewFormItem("Ключ (опционально)", container.NewBorder(nil, nil, nil, keyFileBtn, keyPathEntry)),
+			widget.NewFormItem("", widget.NewLabel("SSH-прокси (опционально)")),
+			widget.NewFormItem("Хост:порт прокси", proxyHostEntry),
+			widget.NewFormItem("Пользователь прокси", proxyUserEntry),
+			widget.NewFormItem("Пароль прокси", proxyPassEntry),
+			widget.NewFormItem("Ключ прокси", container.NewBorder(nil, nil, nil, proxyKeyBtn, proxyKeyEntry)),
 			widget.NewFormItem("Имя соединения", profileNameEntry),
 		},
 	}

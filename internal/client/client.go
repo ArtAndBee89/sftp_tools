@@ -23,47 +23,83 @@ type Client struct {
 	sftp *sftp.Client
 }
 
+func authMethods(password, keyPath string) ([]ssh.AuthMethod, error) {
+	var methods []ssh.AuthMethod
+	if keyPath != "" {
+		data, err := os.ReadFile(keyPath)
+		if err != nil {
+			return nil, fmt.Errorf("чтение ключа: %v", err)
+		}
+		signer, err := ssh.ParsePrivateKey(data)
+		if err != nil {
+			return nil, fmt.Errorf("парсинг ключа: %v", err)
+		}
+		methods = append(methods, ssh.PublicKeys(signer))
+	}
+	if password != "" {
+		methods = append(methods, ssh.Password(password))
+	}
+	if len(methods) == 0 {
+		return nil, fmt.Errorf("нужен пароль или ключ")
+	}
+	return methods, nil
+}
+
+func sshConfig(user string, auth []ssh.AuthMethod) *ssh.ClientConfig {
+	return &ssh.ClientConfig{
+		User:            user,
+		Auth:            auth,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+}
+
 func New(host, user, password, keyPath string) (*Client, error) {
 	c := &Client{}
-	if err := c.Connect(host, user, password, keyPath); err != nil {
+	if err := c.Connect(host, user, password, keyPath, "", "", "", ""); err != nil {
 		return nil, err
 	}
 	return c, nil
 }
 
-func (c *Client) Connect(host, user, password, keyPath string) error {
+func (c *Client) Connect(host, user, password, keyPath, proxyHost, proxyUser, proxyPassword, proxyKeyPath string) error {
 	if c.ssh != nil || c.sftp != nil {
 		c.Close()
 	}
 
-	var authMethods []ssh.AuthMethod
-	if keyPath != "" {
-		data, err := os.ReadFile(keyPath)
-		if err != nil {
-			return fmt.Errorf("чтение ключа: %v", err)
-		}
-		signer, err := ssh.ParsePrivateKey(data)
-		if err != nil {
-			return fmt.Errorf("парсинг ключа: %v", err)
-		}
-		authMethods = append(authMethods, ssh.PublicKeys(signer))
-	}
-	if password != "" {
-		authMethods = append(authMethods, ssh.Password(password))
-	}
-	if len(authMethods) == 0 {
-		return fmt.Errorf("нужен пароль или ключ")
-	}
-
-	config := &ssh.ClientConfig{
-		User:            user,
-		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	}
-	sshClient, err := ssh.Dial("tcp", host, config)
+	auth, err := authMethods(password, keyPath)
 	if err != nil {
 		return err
 	}
+
+	var sshClient *ssh.Client
+	if proxyHost != "" {
+		proxyAuth, err := authMethods(proxyPassword, proxyKeyPath)
+		if err != nil {
+			return fmt.Errorf("прокси: %v", err)
+		}
+		proxyConn, err := ssh.Dial("tcp", proxyHost, sshConfig(proxyUser, proxyAuth))
+		if err != nil {
+			return fmt.Errorf("подключение к прокси: %v", err)
+		}
+		conn, err := proxyConn.Dial("tcp", host)
+		if err != nil {
+			proxyConn.Close()
+			return fmt.Errorf("туннель через прокси: %v", err)
+		}
+		nc, ch, req, err := ssh.NewClientConn(conn, host, sshConfig(user, auth))
+		if err != nil {
+			conn.Close()
+			proxyConn.Close()
+			return fmt.Errorf("рукопожатие через прокси: %v", err)
+		}
+		sshClient = ssh.NewClient(nc, ch, req)
+	} else {
+		sshClient, err = ssh.Dial("tcp", host, sshConfig(user, auth))
+		if err != nil {
+			return err
+		}
+	}
+
 	sftpClient, err := sftp.NewClient(sshClient)
 	if err != nil {
 		sshClient.Close()
