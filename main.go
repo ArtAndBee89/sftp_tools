@@ -353,8 +353,10 @@ func showFileManager() {
 	refreshBtn := widget.NewButton("⟳ Обновить", func() {
 		loadDir(currentDir)
 	})
+	newFolderBtn := widget.NewButton("📁+", showNewFolderDialog)
+	newFileBtn := widget.NewButton("📄+", showNewFileDialog)
 	topBar := container.NewVBox(
-		container.NewHBox(upBtn, refreshBtn, newThemeToggle(), disconnectBtn),
+		container.NewHBox(upBtn, refreshBtn, newFolderBtn, newFileBtn, newThemeToggle(), disconnectBtn),
 		pathEntry,
 	)
 
@@ -418,9 +420,11 @@ func showFileManager() {
 		downloadMultiple(path, chosen)
 	})
 
+	deleteSelectedBtn := widget.NewButton("🗑 Удалить выбранные", deleteSelectedItems)
+
 	mainContent := container.NewBorder(
 		topBar,
-		container.NewHBox(downloadBtn),
+		container.NewHBox(downloadBtn, deleteSelectedBtn),
 		nil, nil,
 		fileList,
 	)
@@ -432,7 +436,63 @@ func showFileManager() {
 		mainContent,
 	))
 	mainWindow.Resize(fyne.NewSize(900, 700))
+	mainWindow.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
+		if e.Name == fyne.KeyDelete {
+			deleteSelectedItems()
+		}
+	})
 	loadDir(currentDir)
+}
+
+// ---------- Удаление выбранных элементов ----------
+func deleteSelectedItems() {
+	if cli == nil || len(selectedIds) == 0 {
+		return
+	}
+	type delItem struct {
+		path string
+		dir  bool
+		name string
+	}
+	var items []delItem
+	for i, it := range currentItems {
+		if selectedIds[i] {
+			items = append(items, delItem{
+				path: filepath.Join(currentDir, it.Name),
+				dir:  it.IsDir,
+				name: it.Name,
+			})
+		}
+	}
+	if len(items) == 0 {
+		return
+	}
+	msg := fmt.Sprintf("Удалить %d выбранных элементов?", len(items))
+	dialog.ShowConfirm("Подтверждение", msg,
+		func(ok bool) {
+			if !ok {
+				return
+			}
+			go func() {
+				for _, it := range items {
+					var err error
+					if it.dir {
+						err = cli.RemoveDir(it.path)
+					} else {
+						err = cli.Remove(it.path)
+					}
+					if err != nil {
+						fyne.Do(func() {
+							dialog.ShowError(fmt.Errorf("ошибка удаления «%s»: %v", it.name, err), mainWindow)
+						})
+						return
+					}
+				}
+				fyne.Do(func() {
+					loadDir(currentDir)
+				})
+			}()
+		}, mainWindow)
 }
 
 // ---------- Контекстное меню ----------
@@ -455,6 +515,43 @@ func showContextMenu(id int, pos fyne.Position) {
 			}
 			downloadFile(fullPath)
 		}),
+		fyne.NewMenuItem("🗑 Удалить", func() {
+			name := item.Name
+			msg := "удалить файл"
+			if item.IsDir {
+				msg = "удалить папку"
+			}
+			dialog.ShowConfirm("Подтверждение", fmt.Sprintf("%s «%s»?", msg, name),
+				func(ok bool) {
+					if !ok {
+						return
+					}
+					go func() {
+						var err error
+						if item.IsDir {
+							err = cli.RemoveDir(fullPath)
+						} else {
+							err = cli.Remove(fullPath)
+						}
+						if err != nil {
+							fyne.Do(func() {
+								dialog.ShowError(fmt.Errorf("ошибка удаления: %v", err), mainWindow)
+							})
+							return
+						}
+						fyne.Do(func() {
+							loadDir(currentDir)
+						})
+					}()
+				}, mainWindow)
+		}),
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItem("📁+ Новая папка", func() {
+			showNewFolderDialog()
+		}),
+		fyne.NewMenuItem("📄+ Новый файл", func() {
+			showNewFileDialog()
+		}),
 		fyne.NewMenuItem("ℹ️ Свойства", func() {
 			info := fmt.Sprintf(
 				"Имя: %s\nПуть: %s\nТип: %s\nРазмер: %d байт\nИзменён: %s",
@@ -468,6 +565,51 @@ func showContextMenu(id int, pos fyne.Position) {
 	menu := fyne.NewMenu("", items...)
 	popup := widget.NewPopUpMenu(menu, mainWindow.Canvas())
 	popup.ShowAtPosition(pos)
+}
+
+func showNewFolderDialog() {
+	entry := widget.NewEntry()
+	dialog.ShowCustomConfirm("Новая папка", "Создать", "Отмена", entry,
+		func(ok bool) {
+			if !ok || entry.Text == "" {
+				return
+			}
+			path := filepath.Join(currentDir, entry.Text)
+			go func() {
+				if err := cli.Mkdir(path); err != nil {
+					fyne.Do(func() {
+						dialog.ShowError(fmt.Errorf("ошибка создания папки: %v", err), mainWindow)
+					})
+					return
+				}
+				fyne.Do(func() {
+					loadDir(currentDir)
+				})
+			}()
+		}, mainWindow)
+}
+
+func showNewFileDialog() {
+	entry := widget.NewEntry()
+	entry.SetText("new_file.txt")
+	dialog.ShowCustomConfirm("Новый файл", "Создать", "Отмена", entry,
+		func(ok bool) {
+			if !ok || entry.Text == "" {
+				return
+			}
+			path := filepath.Join(currentDir, entry.Text)
+			go func() {
+				if err := cli.CreateEmptyFile(path); err != nil {
+					fyne.Do(func() {
+						dialog.ShowError(fmt.Errorf("ошибка создания файла: %v", err), mainWindow)
+					})
+					return
+				}
+				fyne.Do(func() {
+					loadDir(currentDir)
+				})
+			}()
+		}, mainWindow)
 }
 
 // ---------- Скачивание одного или нескольких файлов ----------

@@ -148,3 +148,23 @@ func (c *Client) WriteFile(remotePath string, data []byte) error {
 	}
 	return nil
 }
+
+func (c *Client) Mkdir(remotePath string) error {
+	return c.sftp.Mkdir(remotePath)
+}
+
+func (c *Client) CreateEmptyFile(remotePath string) error {
+	remote, err := c.sftp.Create(remotePath)
+	if err != nil {
+		return err
+	}
+	return remote.Close()
+}
+
+func (c *Client) Remove(remotePath string) error {
+	return c.sftp.Remove(remotePath)
+}
+
+func (c *Client) RemoveDir(remotePath string) error {
+	return c.sftp.RemoveDirectory(remotePath)
+}
