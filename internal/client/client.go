@@ -204,3 +204,20 @@ func (c *Client) Remove(remotePath string) error {
 func (c *Client) RemoveDir(remotePath string) error {
 	return c.sftp.RemoveDirectory(remotePath)
 }
+
+func (c *Client) Upload(localPath, remotePath string) error {
+	local, err := os.Open(localPath)
+	if err != nil {
+		return fmt.Errorf("открытие локального файла: %v", err)
+	}
+	defer local.Close()
+	remote, err := c.sftp.Create(remotePath)
+	if err != nil {
+		return fmt.Errorf("создание удалённого файла: %v", err)
+	}
+	defer remote.Close()
+	if _, err := io.Copy(remote, local); err != nil {
+		return fmt.Errorf("копирование на сервер: %v", err)
+	}
+	return nil
+}

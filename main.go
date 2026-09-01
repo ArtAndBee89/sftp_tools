@@ -38,8 +38,9 @@ func showFileManager() {
 	})
 	newFolderBtn := widget.NewButton("📁+", showNewFolderDialog)
 	newFileBtn := widget.NewButton("📄+", showNewFileDialog)
+	uploadBtn := widget.NewButton("⬆ Загрузить", showUploadDialog)
 	topBar := container.NewVBox(
-		container.NewHBox(upBtn, refreshBtn, newFolderBtn, newFileBtn, newThemeToggle(), disconnectBtn),
+		container.NewHBox(upBtn, refreshBtn, newFolderBtn, newFileBtn, uploadBtn, newThemeToggle(), disconnectBtn),
 		pathEntry,
 	)
 
@@ -187,6 +188,10 @@ func showContextMenu(id int, pos fyne.Position) {
 		}),
 		fyne.NewMenuItem("📄+ Новый файл", func() {
 			showNewFileDialog()
+		}),
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItem("⬆ Загрузить файл", func() {
+			showUploadDialog()
 		}),
 		fyne.NewMenuItem("ℹ️ Свойства", func() {
 			info := fmt.Sprintf(

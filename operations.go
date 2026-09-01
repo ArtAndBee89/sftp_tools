@@ -108,6 +108,57 @@ func showNewFileDialog() {
 		}, mainWindow)
 }
 
+// ---------- Загрузка на сервер ----------
+func showUploadDialog() {
+	var paths []string
+	var d dialog.Dialog
+
+	var showNext func()
+	showNext = func() {
+		d = dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
+			if err != nil {
+				return
+			}
+			if reader == nil {
+				startUpload(paths)
+				return
+			}
+			paths = append(paths, reader.URI().Path())
+			reader.Close()
+			dialog.ShowConfirm("Добавить ещё?", "Выбрать ещё один файл?",
+				func(ok bool) {
+					if ok {
+						showNext()
+					} else {
+						startUpload(paths)
+					}
+				}, mainWindow)
+		}, mainWindow)
+		d.(*dialog.FileDialog).SetConfirmText("Загрузить")
+		d.Show()
+	}
+
+	showNext()
+}
+
+func startUpload(paths []string) {
+	go func() {
+		for _, lp := range paths {
+			rp := filepath.Join(currentDir, filepath.Base(lp))
+			if err := cli.Upload(lp, rp); err != nil {
+				fyne.Do(func() {
+					dialog.ShowError(fmt.Errorf("ошибка загрузки %s: %v", filepath.Base(lp), err), mainWindow)
+				})
+				return
+			}
+		}
+		fyne.Do(func() {
+			loadDir(currentDir)
+			dialog.ShowInformation("Успех", fmt.Sprintf("Загружено %d файлов", len(paths)), mainWindow)
+		})
+	}()
+}
+
 // ---------- Скачивание одного или нескольких файлов ----------
 func downloadFile(remotePath string) {
 	dialog.ShowFolderOpen(func(list fyne.ListableURI, err error) {
