@@ -21,6 +21,73 @@ type Item struct {
 type Client struct {
 	ssh  *ssh.Client
 	sftp *sftp.Client
+	sudo bool
+
+	user      string
+	auth      []ssh.AuthMethod
+	proxyHost string
+	proxyUser string
+	proxyAuth []ssh.AuthMethod
+}
+
+// SetSudo включает/выключает sudo. Если соединение уже установлено,
+// sftp-слой пересоздаётся в новом режиме без разрыва SSH.
+func (c *Client) SetSudo(enabled bool) error {
+	if c.sudo == enabled {
+		return nil
+	}
+	c.sudo = enabled
+	if c.ssh == nil {
+		return nil
+	}
+	if c.sftp != nil {
+		c.sftp.Close()
+		c.sftp = nil
+	}
+	return c.initSftp()
+}
+
+func (c *Client) IsSudo() bool {
+	return c.sudo
+}
+
+// initSftp создаёт sftp-слой поверх существующего ssh-соединения,
+// учитывая текущий режим sudo.
+func (c *Client) initSftp() error {
+	var sftpClient *sftp.Client
+	var err error
+	if c.sudo {
+		session, err := c.ssh.NewSession()
+		if err != nil {
+			return fmt.Errorf("создание сессии: %v", err)
+		}
+		stdin, err := session.StdinPipe()
+		if err != nil {
+			session.Close()
+			return fmt.Errorf("stdin: %v", err)
+		}
+		stdout, err := session.StdoutPipe()
+		if err != nil {
+			session.Close()
+			return fmt.Errorf("stdout: %v", err)
+		}
+		if err := session.Start("sudo /usr/lib/openssh/sftp-server"); err != nil {
+			session.Close()
+			return fmt.Errorf("запуск sudo sftp: %v", err)
+		}
+		sftpClient, err = sftp.NewClientPipe(stdout, stdin)
+		if err != nil {
+			session.Close()
+			return fmt.Errorf("sftp через sudo: %v", err)
+		}
+	} else {
+		sftpClient, err = sftp.NewClient(c.ssh)
+		if err != nil {
+			return fmt.Errorf("sftp: %v", err)
+		}
+	}
+	c.sftp = sftpClient
+	return nil
 }
 
 func authMethods(password, keyPath string) ([]ssh.AuthMethod, error) {
@@ -70,14 +137,20 @@ func (c *Client) Connect(host, user, password, keyPath, proxyHost, proxyUser, pr
 	if err != nil {
 		return err
 	}
-
-	var sshClient *ssh.Client
+	c.user = user
+	c.auth = auth
+	c.proxyHost = proxyHost
+	c.proxyUser = proxyUser
 	if proxyHost != "" {
-		proxyAuth, err := authMethods(proxyPassword, proxyKeyPath)
+		c.proxyAuth, err = authMethods(proxyPassword, proxyKeyPath)
 		if err != nil {
 			return fmt.Errorf("прокси: %v", err)
 		}
-		proxyConn, err := ssh.Dial("tcp", proxyHost, sshConfig(proxyUser, proxyAuth))
+	}
+
+	var sshClient *ssh.Client
+	if proxyHost != "" {
+		proxyConn, err := ssh.Dial("tcp", proxyHost, sshConfig(proxyUser, c.proxyAuth))
 		if err != nil {
 			return fmt.Errorf("подключение к прокси: %v", err)
 		}
@@ -100,13 +173,11 @@ func (c *Client) Connect(host, user, password, keyPath, proxyHost, proxyUser, pr
 		}
 	}
 
-	sftpClient, err := sftp.NewClient(sshClient)
-	if err != nil {
-		sshClient.Close()
+	c.ssh = sshClient
+	if err := c.initSftp(); err != nil {
+		c.ssh.Close()
 		return err
 	}
-	c.ssh = sshClient
-	c.sftp = sftpClient
 	return nil
 }
 

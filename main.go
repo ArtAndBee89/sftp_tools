@@ -39,8 +39,18 @@ func showFileManager() {
 	newFolderBtn := widget.NewButton("📁+", showNewFolderDialog)
 	newFileBtn := widget.NewButton("📄+", showNewFileDialog)
 	uploadBtn := widget.NewButton("⬆ Загрузить", showUploadDialog)
+	var sudoCheck *widget.Check
+	sudoCheck = widget.NewCheck("sudo", func(checked bool) {
+		if cli != nil {
+			if err := cli.SetSudo(checked); err != nil {
+				dialog.ShowError(fmt.Errorf("переключение sudo: %v", err), mainWindow)
+				sudoCheck.SetChecked(!checked)
+			}
+		}
+	})
+	sudoCheck.SetChecked(false)
 	topBar := container.NewVBox(
-		container.NewHBox(upBtn, refreshBtn, newFolderBtn, newFileBtn, uploadBtn, newThemeToggle(), disconnectBtn),
+		container.NewHBox(upBtn, refreshBtn, newFolderBtn, newFileBtn, uploadBtn, sudoCheck, newThemeToggle(), disconnectBtn),
 		pathEntry,
 	)
 
