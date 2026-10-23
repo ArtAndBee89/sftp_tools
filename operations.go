@@ -108,6 +108,33 @@ func showNewFileDialog() {
 		}, mainWindow)
 }
 
+func showRenameDialog(oldPath string) {
+	entry := widget.NewEntry()
+	entry.SetText(filepath.Base(oldPath))
+	dialog.ShowCustomConfirm("Переименовать", "Переименовать", "Отмена", entry,
+		func(ok bool) {
+			if !ok || entry.Text == "" {
+				return
+			}
+			newName := entry.Text
+			newPath := filepath.Join(filepath.Dir(oldPath), newName)
+			if newPath == oldPath {
+				return
+			}
+			go func() {
+				if err := cli.Rename(oldPath, newPath); err != nil {
+					fyne.Do(func() {
+						dialog.ShowError(fmt.Errorf("ошибка переименования: %v", err), mainWindow)
+					})
+					return
+				}
+				fyne.Do(func() {
+					loadDir(currentDir)
+				})
+			}()
+		}, mainWindow)
+}
+
 // ---------- Загрузка на сервер ----------
 func showUploadDialog() {
 	var paths []string

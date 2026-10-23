@@ -192,6 +192,9 @@ func showContextMenu(id int, pos fyne.Position) {
 					}()
 				}, mainWindow)
 		}),
+		fyne.NewMenuItem("💾 Переименовать", func() {
+			showRenameDialog(fullPath)
+		}),
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem("📁+ Новая папка", func() {
 			showNewFolderDialog()

@@ -272,6 +272,10 @@ func (c *Client) Remove(remotePath string) error {
 	return c.sftp.Remove(remotePath)
 }
 
+func (c *Client) Rename(oldPath, newPath string) error {
+	return c.sftp.Rename(oldPath, newPath)
+}
+
 func (c *Client) RemoveDir(remotePath string) error {
 	return c.sftp.RemoveDirectory(remotePath)
 }
